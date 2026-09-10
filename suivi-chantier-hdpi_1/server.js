@@ -44,10 +44,10 @@ app.get("/api/board", async (req, res) => {
       "SELECT id, nom, adresse, created_at FROM chantiers ORDER BY created_at ASC"
     );
     const colonnes = await pool.query(
-      "SELECT id, nom, ordre FROM colonnes ORDER BY ordre ASC, id ASC"
+      "SELECT id, nom, ordre, type FROM colonnes ORDER BY ordre ASC, id ASC"
     );
     const cells = await pool.query(
-      "SELECT id, chantier_id, colonne_id, technicien_initiales, commentaire, completed_at FROM cell_status"
+      "SELECT id, chantier_id, colonne_id, technicien_initiales, commentaire, completed_at, date_value FROM cell_status"
     );
 
     res.json({
@@ -57,7 +57,7 @@ app.get("/api/board", async (req, res) => {
         adresse: c.adresse,
         createdAt: c.created_at,
       })),
-      colonnes: colonnes.rows.map((c) => ({ id: c.id, nom: c.nom, ordre: c.ordre })),
+      colonnes: colonnes.rows.map((c) => ({ id: c.id, nom: c.nom, ordre: c.ordre, type: c.type })),
       cells: cells.rows.map((c) => ({
         id: c.id,
         chantierId: c.chantier_id,
@@ -65,6 +65,7 @@ app.get("/api/board", async (req, res) => {
         initiales: c.technicien_initiales,
         commentaire: c.commentaire,
         date: c.completed_at,
+        dateValue: c.date_value,
       })),
     });
   } catch (e) {
@@ -128,16 +129,26 @@ app.post("/api/cells", async (req, res) => {
     const chantier = await pool.query("SELECT id FROM chantiers WHERE id = $1", [chantierId]);
     if (chantier.rows.length === 0) return res.status(404).json({ error: "unknown_chantier" });
 
-    const colonne = await pool.query("SELECT id FROM colonnes WHERE id = $1", [colonneId]);
+    const colonne = await pool.query("SELECT id, type FROM colonnes WHERE id = $1", [colonneId]);
     if (colonne.rows.length === 0) return res.status(404).json({ error: "unknown_colonne" });
+    const colonneType = colonne.rows[0].type || "task";
+
+    let dateValue = null;
+    if (colonneType === "date") {
+      const dateValueRaw = String(req.body.dateValue || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValueRaw)) {
+        return res.status(400).json({ error: "invalid_date" });
+      }
+      dateValue = dateValueRaw;
+    }
 
     let result;
     try {
       result = await pool.query(
-        `INSERT INTO cell_status (chantier_id, colonne_id, technicien_initiales, commentaire)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, chantier_id, colonne_id, technicien_initiales, commentaire, completed_at`,
-        [chantierId, colonneId, initiales, commentaire]
+        `INSERT INTO cell_status (chantier_id, colonne_id, technicien_initiales, commentaire, date_value)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, chantier_id, colonne_id, technicien_initiales, commentaire, completed_at, date_value`,
+        [chantierId, colonneId, initiales, commentaire, dateValue]
       );
     } catch (err) {
       if (err.code === "23505") {
@@ -154,6 +165,7 @@ app.post("/api/cells", async (req, res) => {
       initiales: c.technicien_initiales,
       commentaire: c.commentaire,
       date: c.completed_at,
+      dateValue: c.date_value,
     });
   } catch (e) {
     console.error(e);
@@ -272,12 +284,13 @@ app.delete("/api/admin/chantiers/:id", requireAdmin, async (req, res) => {
 app.post("/api/admin/colonnes", requireAdmin, async (req, res) => {
   try {
     const nom = String(req.body.nom || "").trim().slice(0, 100);
+    const type = req.body.type === "date" ? "date" : "task";
     if (!nom) return res.status(400).json({ error: "invalid_input" });
     const { rows: maxRows } = await pool.query("SELECT COALESCE(MAX(ordre), 0) AS max_ordre FROM colonnes");
     const ordre = maxRows[0].max_ordre + 1;
     const { rows } = await pool.query(
-      "INSERT INTO colonnes (nom, ordre) VALUES ($1, $2) RETURNING id, nom, ordre",
-      [nom, ordre]
+      "INSERT INTO colonnes (nom, ordre, type) VALUES ($1, $2, $3) RETURNING id, nom, ordre, type",
+      [nom, ordre, type]
     );
     res.status(201).json(rows[0]);
   } catch (e) {
