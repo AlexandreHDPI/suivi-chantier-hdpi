@@ -74,6 +74,8 @@ async function migrate() {
     );
   `);
 
+  await pool.query(`ALTER TABLE admin_config ADD COLUMN IF NOT EXISTS full_width BOOLEAN NOT NULL DEFAULT false;`);
+
   const { rows: colonneRows } = await pool.query("SELECT id FROM colonnes LIMIT 1");
   if (colonneRows.length === 0) {
     for (let i = 0; i < DEFAULT_COLONNES.length; i++) {
