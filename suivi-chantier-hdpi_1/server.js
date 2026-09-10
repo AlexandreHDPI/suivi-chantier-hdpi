@@ -87,8 +87,11 @@ app.get("/api/techniciens", async (req, res) => {
 
 app.get("/api/settings", async (req, res) => {
   try {
-    const { rows } = await pool.query("SELECT full_width FROM admin_config WHERE id = 1");
-    res.json({ fullWidth: rows.length ? !!rows[0].full_width : false });
+    const { rows } = await pool.query("SELECT full_width, zoom_level FROM admin_config WHERE id = 1");
+    res.json({
+      fullWidth: rows.length ? !!rows[0].full_width : false,
+      zoomLevel: rows.length ? rows[0].zoom_level : 100,
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server_error" });
@@ -203,9 +206,14 @@ app.post("/api/admin/password", requireAdmin, async (req, res) => {
 
 app.post("/api/admin/settings", requireAdmin, async (req, res) => {
   try {
-    const fullWidth = !!req.body.fullWidth;
-    await pool.query("UPDATE admin_config SET full_width = $1 WHERE id = 1", [fullWidth]);
-    res.json({ fullWidth });
+    const { rows } = await pool.query("SELECT full_width, zoom_level FROM admin_config WHERE id = 1");
+    const current = rows[0] || { full_width: false, zoom_level: 100 };
+    const fullWidth = req.body.fullWidth !== undefined ? !!req.body.fullWidth : current.full_width;
+    let zoomLevel = req.body.zoomLevel !== undefined ? parseInt(req.body.zoomLevel, 10) : current.zoom_level;
+    if (!Number.isFinite(zoomLevel)) zoomLevel = 100;
+    zoomLevel = Math.max(70, Math.min(160, zoomLevel));
+    await pool.query("UPDATE admin_config SET full_width = $1, zoom_level = $2 WHERE id = 1", [fullWidth, zoomLevel]);
+    res.json({ fullWidth, zoomLevel });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server_error" });
