@@ -85,6 +85,16 @@ app.get("/api/techniciens", async (req, res) => {
   }
 });
 
+app.get("/api/settings", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT full_width FROM admin_config WHERE id = 1");
+    res.json({ fullWidth: rows.length ? !!rows[0].full_width : false });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
 app.get("/api/admin/me", (req, res) => {
   const token = req.cookies[COOKIE_NAME];
   if (!token) return res.json({ authenticated: false });
@@ -185,6 +195,17 @@ app.post("/api/admin/password", requireAdmin, async (req, res) => {
     const hash = await bcrypt.hash(newPassword, 10);
     await pool.query("UPDATE admin_config SET password_hash = $1 WHERE id = 1", [hash]);
     res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+app.post("/api/admin/settings", requireAdmin, async (req, res) => {
+  try {
+    const fullWidth = !!req.body.fullWidth;
+    await pool.query("UPDATE admin_config SET full_width = $1 WHERE id = 1", [fullWidth]);
+    res.json({ fullWidth });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server_error" });
