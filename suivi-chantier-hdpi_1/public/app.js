@@ -4,6 +4,7 @@
   var LS_INITIALES = "hdpi_suivi_initiales";
   var LS_THEME = "hdpi_theme";
   var LS_BG_CUSTOM = "hdpi_bg_custom";
+  var LS_TUTO_SEEN = "hdpi_tuto_seen";
   var DEFAULT_PAPER_LIGHT = "#eef1f3";
   var POLL_MS = 8000;
 
@@ -17,6 +18,7 @@
     modalOpen: false,
     activeCellCtx: null, // {chantierId, colonneId, cell|null}
     editingChantierId: null,
+    settings: { fullWidth: false },
   };
 
   function safeGetLS(key) {
@@ -74,6 +76,9 @@
   function fetchMe() {
     return api("/api/admin/me").then(function (data) { state.isAdmin = !!(data && data.authenticated); });
   }
+  function fetchSettings() {
+    return api("/api/settings").then(function (data) { state.settings = data || { fullWidth: false }; });
+  }
 
   // ---------- header / status ----------
 
@@ -126,6 +131,7 @@
 
     renderTechList();
     renderColonneList();
+    renderWidthChoiceActive();
   }
 
   function renderTechList() {
@@ -317,6 +323,9 @@
           dateSpan.textContent = formatDate(cell.date);
           btn.appendChild(initSpan);
           btn.appendChild(dateSpan);
+          btn.title = cell.commentaire
+            ? "Contient un commentaire — cliquer pour le lire"
+            : "Terminé par " + cell.initiales;
           btn.onclick = function () { openCellModal(ch, col, cell); };
         } else {
           btn.className = "cell-btn";
@@ -505,6 +514,35 @@
     });
   }
 
+  function applyLayoutWidth() {
+    var full = !!(state.settings && state.settings.fullWidth);
+    var wrap = document.querySelector(".wrap");
+    var headerRow = document.querySelector(".header-row");
+    if (wrap) wrap.classList.toggle("full-width", full);
+    if (headerRow) headerRow.classList.toggle("full-width", full);
+  }
+
+  function renderWidthChoiceActive() {
+    var full = !!(state.settings && state.settings.fullWidth);
+    document.querySelectorAll(".width-opt").forEach(function (btn) {
+      var isFull = btn.dataset.widthChoice === "full";
+      btn.classList.toggle("active", isFull === full);
+    });
+  }
+
+  function wireWidthControls() {
+    document.querySelectorAll(".width-opt").forEach(function (btn) {
+      btn.onclick = function () {
+        var fullWidth = btn.dataset.widthChoice === "full";
+        api("/api/admin/settings", { method: "POST", body: { fullWidth: fullWidth } }).then(function (data) {
+          state.settings = data || { fullWidth: fullWidth };
+          applyLayoutWidth();
+          renderWidthChoiceActive();
+        });
+      };
+    });
+  }
+
   function openSettingsModal() {
     renderThemeChoiceActive();
     var storedBg = safeGetLS(LS_BG_CUSTOM);
@@ -562,6 +600,20 @@
     document.getElementById("loginPasswordInput").addEventListener("keydown", function (e) {
       if (e.key === "Enter") document.getElementById("loginSubmit").click();
     });
+  }
+
+  // ---------- tutorial modal ----------
+
+  function openTutoModal() {
+    document.getElementById("tutoBackdrop").hidden = false;
+  }
+  function closeTutoModal() {
+    document.getElementById("tutoBackdrop").hidden = true;
+    safeSetLS(LS_TUTO_SEEN, "1");
+  }
+  function wireTutoModal() {
+    document.getElementById("helpBtn").onclick = openTutoModal;
+    document.getElementById("tutoCloseBtn").onclick = closeTutoModal;
   }
 
   // ---------- admin panel static controls ----------
@@ -642,10 +694,11 @@
     renderAdminPanel();
     renderBoard();
     renderStatus();
+    applyLayoutWidth();
   }
 
   function refreshAll() {
-    return Promise.all([fetchBoard(), fetchTechniciens(), fetchMe()])
+    return Promise.all([fetchBoard(), fetchTechniciens(), fetchMe(), fetchSettings()])
       .then(renderAll)
       .catch(function () {
         state.online = false;
@@ -658,7 +711,12 @@
     wireLoginModal();
     wireCellModal();
     wireStaticControls();
+    wireWidthControls();
+    wireTutoModal();
     refreshAll();
+    if (!safeGetLS(LS_TUTO_SEEN)) {
+      openTutoModal();
+    }
     setInterval(function () {
       var cellModalOpen = !document.getElementById("cellBackdrop").hidden;
       if (cellModalOpen) return;
