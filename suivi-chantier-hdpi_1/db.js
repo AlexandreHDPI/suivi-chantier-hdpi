@@ -15,13 +15,13 @@ const pool = new Pool({
 });
 
 const DEFAULT_COLONNES = [
-  "Doc technique",
-  "Note de calcul",
-  "Plans",
-  "Programmation",
-  "PV autocontrôle",
-  "Synoptique",
-  "Date de réception",
+  { nom: "Doc technique", type: "task" },
+  { nom: "Note de calcul", type: "task" },
+  { nom: "Plans", type: "task" },
+  { nom: "Programmation", type: "task" },
+  { nom: "PV autocontrôle", type: "task" },
+  { nom: "Synoptique", type: "task" },
+  { nom: "Date de réception", type: "date" },
 ];
 
 async function migrate() {
@@ -78,10 +78,16 @@ async function migrate() {
 
   await pool.query(`ALTER TABLE admin_config ADD COLUMN IF NOT EXISTS zoom_level INTEGER NOT NULL DEFAULT 100;`);
 
+  await pool.query(`ALTER TABLE colonnes ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'task';`);
+
+  await pool.query(`UPDATE colonnes SET type = 'date' WHERE nom = 'Date de réception' AND type <> 'date';`);
+
+  await pool.query(`ALTER TABLE cell_status ADD COLUMN IF NOT EXISTS date_value TEXT;`);
+
   const { rows: colonneRows } = await pool.query("SELECT id FROM colonnes LIMIT 1");
   if (colonneRows.length === 0) {
     for (let i = 0; i < DEFAULT_COLONNES.length; i++) {
-      await pool.query("INSERT INTO colonnes (nom, ordre) VALUES ($1, $2)", [DEFAULT_COLONNES[i], i + 1]);
+      await pool.query("INSERT INTO colonnes (nom, ordre, type) VALUES ($1, $2, $3)", [DEFAULT_COLONNES[i].nom, i + 1, DEFAULT_COLONNES[i].type]);
     }
     console.log("Colonnes par défaut créées.");
   }
