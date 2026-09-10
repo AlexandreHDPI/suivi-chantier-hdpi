@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suivi Chantier HDPI</title>
+<script>
+(function () {
+  try {
+    var theme = localStorage.getItem("hdpi_theme") || "light";
+    if (theme === "dark" || theme === "light") {
+      document.documentElement.setAttribute("data-theme", theme);
+    }
+    var bg = localStorage.getItem("hdpi_bg_custom");
+    if (bg) document.documentElement.style.setProperty("--paper", bg);
+  } catch (e) { /* ignore */ }
+})();
+</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-row">
+    <div class="brand">
+      <span class="eyebrow">HDPI &middot; Terrain</span>
+      <h1>Suivi Chantier</h1>
+      <div class="status-line" id="statusLine"><span class="status-dot off" id="statusDot"></span><span id="statusText">Connexion…</span></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <button class="btn btn-sm" id="settingsBtn" title="Réglages d’affichage" type="button">Réglages</button>
+      <div id="headerActions" style="display:flex; align-items:center; gap:8px;"></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="admin-panel" id="adminPanel" hidden>
+    <div class="admin-box">
+      <h2>Ajouter un chantier</h2>
+      <div class="admin-bar">
+        <input type="text" id="newChantierNom" placeholder="Nom du chantier (ex. Clinique du Millénaire)" maxlength="200">
+        <input type="text" id="newChantierAdresse" placeholder="Adresse (optionnel)" maxlength="300">
+        <button class="btn btn-primary" id="addChantierBtn">Ajouter</button>
+      </div>
+    </div>
+
+    <div class="admin-box">
+      <h2>Techniciens</h2>
+      <p class="hint">Ces initiales apparaissent dans la liste que les techniciens utilisent pour marquer une tâche terminée.</p>
+      <div class="admin-bar">
+        <input type="text" id="newTechInitiales" placeholder="Initiales (ex. JD)" maxlength="6">
+        <input type="text" id="newTechNom" placeholder="Nom (optionnel)" maxlength="120">
+        <button class="btn btn-primary" id="addTechBtn">Ajouter</button>
+      </div>
+      <div class="tech-list" id="techList"></div>
+    </div>
+
+    <div class="admin-box">
+      <h2>Colonnes du tableau</h2>
+      <p class="hint">Les types de documents / tâches, dans l’ordre où ils apparaissent en haut du tableau.</p>
+      <div class="admin-bar">
+        <input type="text" id="newColonneNom" placeholder="Nom de la colonne (ex. Plans)" maxlength="100">
+        <button class="btn btn-primary" id="addColonneBtn">Ajouter</button>
+      </div>
+      <div class="colonne-list" id="colonneList"></div>
+    </div>
+
+    <div class="admin-box">
+      <h2>Code admin</h2>
+      <div class="admin-bar">
+        <input type="password" id="newPasswordInput" placeholder="Nouveau mot de passe" autocomplete="new-password">
+        <button class="btn" id="changePasswordBtn">Modifier</button>
+      </div>
+      <div class="error-msg" id="passwordMsg"></div>
+    </div>
+  </section>
+
+  <main>
+    <div class="empty-state" id="emptyState" hidden>
+      <strong>Aucun chantier pour l’instant</strong>
+      <span id="emptyStateSub">Dès qu’un chantier sera ajouté, il apparaîtra ici.</span>
+    </div>
+    <div class="board-wrap" id="boardWrap" hidden>
+      <table class="board" id="boardTable">
+        <thead><tr id="boardHeadRow"></tr></thead>
+        <tbody id="boardBody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer>Suivi partagé en temps réel &middot; HDPI</footer>
+</div>
+
+<div class="modal-backdrop" id="loginBackdrop" hidden>
+  <div class="modal">
+    <h2>Accès admin</h2>
+    <p class="desc">Entrez le mot de passe pour ajouter, modifier ou supprimer des chantiers.</p>
+    <input type="password" id="loginPasswordInput" autocomplete="current-password">
+    <div class="error-msg" id="loginError"></div>
+    <div class="modal-actions">
+      <button class="btn" id="loginCancel">Annuler</button>
+      <button class="btn btn-primary" id="loginSubmit">Se connecter</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="cellBackdrop" hidden>
+  <div class="modal">
+    <h2 id="cellModalTitle">Marquer terminé</h2>
+    <p class="desc" id="cellModalSub"></p>
+
+    <div id="cellFormView">
+      <div class="field">
+        <label>Technicien</label>
+        <select id="cellInitialesSelect"></select>
+      </div>
+      <div class="field" style="margin-top:10px;">
+        <label>Commentaire (optionnel)</label>
+        <textarea id="cellCommentInput" rows="2" placeholder="Ex. plan mis à jour, prévoir un retour…"></textarea>
+      </div>
+      <div class="error-msg" id="cellFormError"></div>
+      <div class="modal-actions">
+        <button class="btn" id="cellCancelBtn">Annuler</button>
+        <button class="btn btn-primary" id="cellValidBtn">Valider</button>
+      </div>
+    </div>
+
+    <div id="cellDetailView" hidden>
+      <div class="cell-detail-box">
+        <div class="cell-detail-row"><span class="init mono" id="cellDetailInit"></span><span id="cellDetailDate" class="mono"></span></div>
+        <div id="cellDetailComment" class="comment-box" hidden></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="cellCloseBtn">Fermer</button>
+        <button class="btn btn-danger-outline" id="cellResetBtn" hidden>Réinitialiser</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="settingsBackdrop" hidden>
+  <div class="modal">
+    <h2>Réglages d’affichage</h2>
+    <p class="desc">Ces réglages sont propres à cet appareil.</p>
+
+    <div class="field">
+      <label>Thème</label>
+      <div class="theme-choice">
+        <button type="button" class="theme-opt" data-theme-choice="light">Clair</button>
+        <button type="button" class="theme-opt" data-theme-choice="dark">Sombre</button>
+        <button type="button" class="theme-opt" data-theme-choice="auto">Auto</button>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:14px;">
+      <label>Couleur de fond</label>
+      <div class="bg-choice">
+        <input type="color" id="bgColorInput" value="#eef1f3">
+        <button class="btn btn-sm" id="bgResetBtn" type="button">Réinitialiser</button>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="settingsCloseBtn">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
