@@ -18,7 +18,7 @@
     modalOpen: false,
     activeCellCtx: null, // {chantierId, colonneId, cell|null}
     editingChantierId: null,
-    settings: { fullWidth: false },
+    settings: { fullWidth: false, zoomLevel: 100 },
   };
 
   function safeGetLS(key) {
@@ -77,7 +77,7 @@
     return api("/api/admin/me").then(function (data) { state.isAdmin = !!(data && data.authenticated); });
   }
   function fetchSettings() {
-    return api("/api/settings").then(function (data) { state.settings = data || { fullWidth: false }; });
+    return api("/api/settings").then(function (data) { state.settings = data || { fullWidth: false, zoomLevel: 100 }; });
   }
 
   // ---------- header / status ----------
@@ -132,6 +132,7 @@
     renderTechList();
     renderColonneList();
     renderWidthChoiceActive();
+    renderZoomControlActive();
   }
 
   function renderTechList() {
@@ -543,6 +544,36 @@
     });
   }
 
+  function applyZoom() {
+    var z = (state.settings && state.settings.zoomLevel) ? state.settings.zoomLevel : 100;
+    document.body.style.zoom = z / 100;
+  }
+
+  function renderZoomControlActive() {
+    var z = (state.settings && state.settings.zoomLevel) ? state.settings.zoomLevel : 100;
+    var range = document.getElementById("zoomRange");
+    var label = document.getElementById("zoomValueLabel");
+    if (range) range.value = z;
+    if (label) label.textContent = z + "%";
+  }
+
+  function wireZoomControl() {
+    var range = document.getElementById("zoomRange");
+    if (!range) return;
+    range.oninput = function () {
+      var label = document.getElementById("zoomValueLabel");
+      if (label) label.textContent = range.value + "%";
+    };
+    range.onchange = function () {
+      var zoomLevel = parseInt(range.value, 10);
+      api("/api/admin/settings", { method: "POST", body: { zoomLevel: zoomLevel } }).then(function (data) {
+        state.settings = data || state.settings;
+        applyZoom();
+        renderZoomControlActive();
+      });
+    };
+  }
+
   function openSettingsModal() {
     renderThemeChoiceActive();
     var storedBg = safeGetLS(LS_BG_CUSTOM);
@@ -695,6 +726,7 @@
     renderBoard();
     renderStatus();
     applyLayoutWidth();
+    applyZoom();
   }
 
   function refreshAll() {
@@ -712,6 +744,7 @@
     wireCellModal();
     wireStaticControls();
     wireWidthControls();
+    wireZoomControl();
     wireTutoModal();
     refreshAll();
     if (!safeGetLS(LS_TUTO_SEEN)) {
