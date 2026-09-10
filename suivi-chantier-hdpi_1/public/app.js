@@ -38,6 +38,70 @@
     return dd + "/" + mm;
   }
 
+  function formatDateValue(dateStr) {
+    if (!dateStr) return "";
+    var parts = dateStr.split("-"); // "YYYY-MM-DD"
+    if (parts.length !== 3) return dateStr;
+    return parts[2] + "/" + parts[1] + "/" + parts[0];
+  }
+
+  function isDateColonne(col) {
+    return !!(col && col.type === "date");
+  }
+
+  // ---------- reception-date urgency color ----------
+
+  function hexToRgb(hex) {
+    hex = String(hex || "").trim().replace("#", "");
+    if (hex.length === 3) hex = hex.split("").map(function (c) { return c + c; }).join("");
+    var num = parseInt(hex, 16) || 0;
+    return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+  }
+  function rgbToCss(rgb) { return "rgb(" + rgb.r + "," + rgb.g + "," + rgb.b + ")"; }
+  function mixRgb(a, b, t) {
+    return {
+      r: Math.round(a.r + (b.r - a.r) * t),
+      g: Math.round(a.g + (b.g - a.g) * t),
+      b: Math.round(a.b + (b.b - a.b) * t),
+    };
+  }
+  function readCssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // Plus l'échéance approche (ou est dépassée), plus la couleur vire au rouge.
+  function receptionUrgencyColors(dateStr) {
+    var HORIZON_DAYS = 45;
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var target = new Date(dateStr + "T00:00:00");
+    var daysUntil = Math.round((target - today) / 86400000);
+
+    var t;
+    if (daysUntil >= HORIZON_DAYS) t = 0;
+    else if (daysUntil <= 0) t = 1;
+    else t = (HORIZON_DAYS - daysUntil) / HORIZON_DAYS;
+
+    var doneBg = hexToRgb(readCssVar("--done-bg"));
+    var doneFg = hexToRgb(readCssVar("--done"));
+    var pendingBg = hexToRgb(readCssVar("--pending-bg"));
+    var pendingFg = hexToRgb(readCssVar("--pending"));
+    var dangerBg = hexToRgb(readCssVar("--danger-bg"));
+    var dangerFg = hexToRgb(readCssVar("--danger"));
+
+    var bg, fg;
+    if (t <= 0.5) {
+      var t2 = t / 0.5;
+      bg = mixRgb(doneBg, pendingBg, t2);
+      fg = mixRgb(doneFg, pendingFg, t2);
+    } else {
+      var t3 = (t - 0.5) / 0.5;
+      bg = mixRgb(pendingBg, dangerBg, t3);
+      fg = mixRgb(pendingFg, dangerFg, t3);
+    }
+    return { bg: rgbToCss(bg), fg: rgbToCss(fg), daysUntil: daysUntil };
+  }
+
   // ---------- API ----------
 
   function api(path, opts) {
@@ -314,25 +378,44 @@
         var btn = document.createElement("button");
         btn.type = "button";
 
+        var isDateCol = isDateColonne(col);
+
         if (cell) {
           btn.className = "cell-btn done" + (cell.commentaire ? " has-comment" : "");
-          var initSpan = document.createElement("span");
-          initSpan.className = "init";
-          initSpan.textContent = cell.initiales;
-          var dateSpan = document.createElement("span");
-          dateSpan.className = "date";
-          dateSpan.textContent = formatDate(cell.date);
-          btn.appendChild(initSpan);
-          btn.appendChild(dateSpan);
-          btn.title = cell.commentaire
-            ? "Contient un commentaire — cliquer pour le lire"
-            : "Terminé par " + cell.initiales;
+          if (isDateCol && cell.dateValue) {
+            var uc = receptionUrgencyColors(cell.dateValue);
+            btn.style.background = uc.bg;
+            btn.style.color = uc.fg;
+            var dateBig = document.createElement("span");
+            dateBig.className = "init";
+            dateBig.textContent = formatDateValue(cell.dateValue);
+            btn.appendChild(dateBig);
+            btn.title = cell.commentaire
+              ? "Réception le " + formatDateValue(cell.dateValue) + " — contient un commentaire, cliquer pour le lire"
+              : (uc.daysUntil < 0
+                ? "Réception prévue le " + formatDateValue(cell.dateValue) + " — échéance dépassée"
+                : "Réception prévue le " + formatDateValue(cell.dateValue));
+          } else {
+            var initSpan = document.createElement("span");
+            initSpan.className = "init";
+            initSpan.textContent = cell.initiales;
+            var dateSpan = document.createElement("span");
+            dateSpan.className = "date";
+            dateSpan.textContent = formatDate(cell.date);
+            btn.appendChild(initSpan);
+            btn.appendChild(dateSpan);
+            btn.title = cell.commentaire
+              ? "Contient un commentaire — cliquer pour le lire"
+              : "Terminé par " + cell.initiales;
+          }
           btn.onclick = function () { openCellModal(ch, col, cell); };
         } else {
           btn.className = "cell-btn";
           btn.textContent = "+";
           btn.disabled = state.techniciens.length === 0;
-          btn.title = state.techniciens.length === 0 ? "Aucun technicien enregistré (contactez l’admin)" : "Marquer terminé";
+          btn.title = state.techniciens.length === 0
+            ? "Aucun technicien enregistré (contactez l’admin)"
+            : (isDateCol ? "Choisir une date de réception" : "Marquer terminé");
           btn.onclick = function () { openCellModal(ch, col, null); };
         }
 
@@ -394,7 +477,8 @@
   // ---------- cell modal ----------
 
   function openCellModal(chantier, colonne, cell) {
-    state.activeCellCtx = { chantierId: chantier.id, colonneId: colonne.id, cell: cell };
+    var isDateCol = isDateColonne(colonne);
+    state.activeCellCtx = { chantierId: chantier.id, colonneId: colonne.id, cell: cell, colonneType: colonne.type };
     var backdrop = document.getElementById("cellBackdrop");
     var title = document.getElementById("cellModalTitle");
     var sub = document.getElementById("cellModalSub");
@@ -404,11 +488,16 @@
     sub.textContent = (chantier.nom || "") + " — " + (colonne.nom || "");
 
     if (cell) {
-      title.textContent = "Terminé";
+      title.textContent = isDateCol ? "Date de réception" : "Terminé";
       formView.hidden = true;
       detailView.hidden = false;
-      document.getElementById("cellDetailInit").textContent = cell.initiales;
-      document.getElementById("cellDetailDate").textContent = formatDate(cell.date);
+      if (isDateCol && cell.dateValue) {
+        document.getElementById("cellDetailInit").textContent = formatDateValue(cell.dateValue);
+        document.getElementById("cellDetailDate").textContent = "renseigné par " + cell.initiales + " le " + formatDate(cell.date);
+      } else {
+        document.getElementById("cellDetailInit").textContent = cell.initiales;
+        document.getElementById("cellDetailDate").textContent = formatDate(cell.date);
+      }
       var commentBox = document.getElementById("cellDetailComment");
       if (cell.commentaire) {
         commentBox.hidden = false;
@@ -418,7 +507,7 @@
       }
       document.getElementById("cellResetBtn").hidden = !state.isAdmin;
     } else {
-      title.textContent = "Marquer terminé";
+      title.textContent = isDateCol ? "Choisir la date de réception" : "Marquer terminé";
       formView.hidden = false;
       detailView.hidden = true;
       var select = document.getElementById("cellInitialesSelect");
@@ -431,6 +520,15 @@
         if (t.initiales === lastUsed) opt.selected = true;
         select.appendChild(opt);
       });
+
+      var dateField = document.getElementById("cellDateField");
+      var dateInput = document.getElementById("cellDateInput");
+      dateField.hidden = !isDateCol;
+      if (isDateCol) {
+        dateInput.value = "";
+        setTimeout(function () { dateInput.focus(); }, 30);
+      }
+
       document.getElementById("cellCommentInput").value = "";
       document.getElementById("cellFormError").textContent = "";
     }
@@ -457,8 +555,17 @@
         err.textContent = "Sélectionnez vos initiales.";
         return;
       }
+      var body = { chantierId: ctx.chantierId, colonneId: ctx.colonneId, initiales: initiales, commentaire: commentaire };
+      if (ctx.colonneType === "date") {
+        var dateValue = document.getElementById("cellDateInput").value;
+        if (!dateValue) {
+          err.textContent = "Choisissez une date.";
+          return;
+        }
+        body.dateValue = dateValue;
+      }
       safeSetLS(LS_INITIALES, initiales);
-      api("/api/cells", { method: "POST", body: { chantierId: ctx.chantierId, colonneId: ctx.colonneId, initiales: initiales, commentaire: commentaire } })
+      api("/api/cells", { method: "POST", body: body })
         .then(function () {
           closeCellModal();
           return refreshAll();
@@ -467,6 +574,8 @@
           if (e.status === 409) {
             err.textContent = "Cette case vient d’être marquée par quelqu’un d’autre.";
             refreshAll();
+          } else if (e.status === 400 && e.data && e.data.error === "invalid_date") {
+            err.textContent = "Date invalide.";
           } else {
             err.textContent = "Échec de l’envoi, réessayez.";
           }
@@ -590,6 +699,7 @@
       btn.onclick = function () {
         applyTheme(btn.dataset.themeChoice);
         renderThemeChoiceActive();
+        renderBoard();
       };
     });
 
@@ -686,10 +796,13 @@
 
     document.getElementById("addColonneBtn").onclick = function () {
       var input = document.getElementById("newColonneNom");
+      var isDateCheckbox = document.getElementById("newColonneIsDate");
       var nom = input.value.trim();
       if (!nom) return;
-      api("/api/admin/colonnes", { method: "POST", body: { nom: nom } }).then(function () {
+      var type = isDateCheckbox && isDateCheckbox.checked ? "date" : "task";
+      api("/api/admin/colonnes", { method: "POST", body: { nom: nom, type: type } }).then(function () {
         input.value = "";
+        if (isDateCheckbox) isDateCheckbox.checked = false;
         input.focus();
         return refreshAll();
       });
