@@ -66,6 +66,10 @@
         <input type="text" id="newColonneNom" placeholder="Nom de la colonne (ex. Plans)" maxlength="100">
         <button class="btn btn-primary" id="addColonneBtn">Ajouter</button>
       </div>
+      <label class="checkbox-row">
+        <input type="checkbox" id="newColonneIsDate">
+        <span>Colonne de type date (échéance), comme « Date de réception »</span>
+      </label>
       <div class="colonne-list" id="colonneList"></div>
     </div>
 
@@ -133,6 +137,10 @@
       <div class="field">
         <label>Technicien</label>
         <select id="cellInitialesSelect"></select>
+      </div>
+      <div class="field" id="cellDateField" style="margin-top:10px;" hidden>
+        <label>Date de réception</label>
+        <input type="date" id="cellDateInput">
       </div>
       <div class="field" style="margin-top:10px;">
         <label>Commentaire (optionnel)</label>
