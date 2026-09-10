@@ -29,6 +29,7 @@
       <div class="status-line" id="statusLine"><span class="status-dot off" id="statusDot"></span><span id="statusText">Connexion…</span></div>
     </div>
     <div style="display:flex; align-items:center; gap:8px;">
+      <button class="btn btn-sm" id="helpBtn" title="Comment ça marche ?" type="button">Aide</button>
       <button class="btn btn-sm" id="settingsBtn" title="Réglages d’affichage" type="button">Réglages</button>
       <div id="headerActions" style="display:flex; align-items:center; gap:8px;"></div>
     </div>
@@ -66,6 +67,15 @@
         <button class="btn btn-primary" id="addColonneBtn">Ajouter</button>
       </div>
       <div class="colonne-list" id="colonneList"></div>
+    </div>
+
+    <div class="admin-box">
+      <h2>Affichage</h2>
+      <p class="hint">Choisis comment le tableau s’affiche pour tout le monde.</p>
+      <div class="theme-choice">
+        <button type="button" class="width-opt" data-width-choice="comfortable">Largeur confortable</button>
+        <button type="button" class="width-opt" data-width-choice="full">Pleine largeur</button>
+      </div>
     </div>
 
     <div class="admin-box">
@@ -165,6 +175,37 @@
 
     <div class="modal-actions">
       <button class="btn btn-primary" id="settingsCloseBtn">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="tutoBackdrop" hidden>
+  <div class="modal modal-wide">
+    <h2>Comment ça marche</h2>
+    <div class="tuto-steps">
+      <div class="tuto-step">
+        <span class="tuto-num">1</span>
+        <p>Chaque ligne est un chantier, chaque colonne un document ou une tâche à réaliser.</p>
+      </div>
+      <div class="tuto-step">
+        <span class="tuto-num">2</span>
+        <p>Cliquez sur une case vide (<strong>+</strong>) pour marquer une tâche terminée : choisissez vos initiales, et ajoutez un commentaire si besoin.</p>
+      </div>
+      <div class="tuto-step">
+        <span class="tuto-num">3</span>
+        <p>Une case verte veut dire que la tâche est terminée, avec les initiales et la date.</p>
+      </div>
+      <div class="tuto-step">
+        <span class="tuto-num tuto-dot-demo"><span class="demo-dot"></span></span>
+        <p>Un petit point sur une case verte indique qu’un commentaire a été laissé : cliquez sur la case pour le lire.</p>
+      </div>
+      <div class="tuto-step">
+        <span class="tuto-num">?</span>
+        <p>Besoin de revoir cette explication ? Cliquez sur « Aide » en haut de la page à tout moment.</p>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="tutoCloseBtn">Compris</button>
     </div>
   </div>
 </div>
