@@ -74,6 +74,12 @@
     </div>
 
     <div class="admin-box">
+      <h2>Chantiers archivés</h2>
+      <p class="hint">Un chantier archivé disparaît du tableau principal mais reste consultable ici. Tu peux le restaurer ou le supprimer définitivement.</p>
+      <div class="archived-list" id="archivedList"></div>
+    </div>
+
+    <div class="admin-box">
       <h2>Affichage</h2>
       <p class="hint">Choisis comment le tableau s’affiche pour tout le monde.</p>
       <div class="theme-choice">
@@ -157,6 +163,17 @@
       <div class="cell-detail-box">
         <div class="cell-detail-row"><span class="init mono" id="cellDetailInit"></span><span id="cellDetailDate" class="mono"></span></div>
         <div id="cellDetailComment" class="comment-box" hidden></div>
+      </div>
+      <div class="attachment-box" id="cellAttachmentBox">
+        <div class="attachment-current" id="attachmentCurrent" hidden>
+          <a id="attachmentLink" href="#" target="_blank" rel="noopener"></a>
+          <button class="icon-btn danger" id="attachmentRemoveBtn" type="button" title="Supprimer la pièce jointe" hidden>×</button>
+        </div>
+        <div class="attachment-upload" id="attachmentUpload">
+          <input type="file" id="attachmentFileInput" accept="application/pdf,image/*">
+          <button class="btn btn-sm" id="attachmentUploadBtn" type="button">Joindre un fichier</button>
+        </div>
+        <div class="error-msg" id="attachmentError"></div>
       </div>
       <div class="modal-actions">
         <button class="btn" id="cellCloseBtn">Fermer</button>
