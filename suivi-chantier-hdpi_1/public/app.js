@@ -15,6 +15,7 @@
     colonnes: [],
     cellsByKey: {}, // "chantierId:colonneId" -> {id,chantierId,colonneId,initiales,commentaire,date}
     techniciens: [],
+    archivedChantiers: [],
     modalOpen: false,
     activeCellCtx: null, // {chantierId, colonneId, cell|null}
     editingChantierId: null,
@@ -47,6 +48,14 @@
 
   function isDateColonne(col) {
     return !!(col && col.type === "date");
+  }
+
+  function chantierProgress(chantierId, colonnes) {
+    var done = 0;
+    for (var i = 0; i < colonnes.length; i++) {
+      if (state.cellsByKey[cellKey(chantierId, colonnes[i].id)]) done++;
+    }
+    return { done: done, total: colonnes.length };
   }
 
   // ---------- reception-date urgency color ----------
@@ -197,6 +206,62 @@
     renderColonneList();
     renderWidthChoiceActive();
     renderZoomControlActive();
+    refreshArchivedList();
+  }
+
+  function refreshArchivedList() {
+    api("/api/admin/chantiers/archived")
+      .then(function (data) {
+        state.archivedChantiers = data || [];
+        renderArchivedList();
+      })
+      .catch(function () { /* ignore */ });
+  }
+
+  function renderArchivedList() {
+    var list = document.getElementById("archivedList");
+    if (!list) return;
+    list.innerHTML = "";
+    var items = state.archivedChantiers || [];
+    if (items.length === 0) {
+      var none = document.createElement("span");
+      none.className = "hint";
+      none.textContent = "Aucun chantier archivé.";
+      list.appendChild(none);
+      return;
+    }
+    items.forEach(function (ch) {
+      var row = document.createElement("div");
+      row.className = "archived-row";
+
+      var nom = document.createElement("span");
+      nom.className = "nom";
+      nom.textContent = ch.nom || "(sans nom)";
+      row.appendChild(nom);
+
+      var actions = document.createElement("div");
+      actions.className = "actions";
+
+      var restoreBtn = document.createElement("button");
+      restoreBtn.className = "btn btn-sm";
+      restoreBtn.type = "button";
+      restoreBtn.textContent = "Restaurer";
+      restoreBtn.onclick = function () {
+        api("/api/admin/chantiers/" + ch.id + "/unarchive", { method: "POST" }).then(refreshAll);
+      };
+      actions.appendChild(restoreBtn);
+
+      var delBtn = document.createElement("button");
+      delBtn.className = "icon-btn danger";
+      delBtn.type = "button";
+      delBtn.title = "Supprimer définitivement";
+      delBtn.textContent = "×";
+      delBtn.onclick = function () { confirmDeleteChantier(ch); };
+      actions.appendChild(delBtn);
+
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
   }
 
   function renderTechList() {
@@ -342,6 +407,13 @@
       nomEl.textContent = ch.nom || "(sans nom)";
       tdChantier.appendChild(nomEl);
 
+      var progress = chantierProgress(ch.id, colonnes);
+      var progressEl = document.createElement("span");
+      progressEl.className = "progress-badge" + (progress.total > 0 && progress.done === progress.total ? " complete" : "");
+      progressEl.textContent = progress.done + "/" + progress.total;
+      progressEl.title = progress.done + " sur " + progress.total + " élément(s) complété(s)";
+      tdChantier.appendChild(progressEl);
+
       if (ch.adresse) {
         var adrEl = document.createElement("div");
         adrEl.className = "chantier-cell-adr";
@@ -359,12 +431,12 @@
         editBtn.onclick = function () { startEditChantier(tdChantier, ch); };
         actions.appendChild(editBtn);
 
-        var delBtn = document.createElement("button");
-        delBtn.type = "button";
-        delBtn.className = "danger";
-        delBtn.textContent = "Supprimer";
-        delBtn.onclick = function () { confirmDeleteChantier(ch); };
-        actions.appendChild(delBtn);
+        var archiveBtn = document.createElement("button");
+        archiveBtn.type = "button";
+        archiveBtn.className = "danger";
+        archiveBtn.textContent = "Archiver";
+        archiveBtn.onclick = function () { confirmArchiveChantier(ch); };
+        actions.appendChild(archiveBtn);
 
         tdChantier.appendChild(actions);
       }
@@ -468,6 +540,12 @@
     nomInput.focus();
   }
 
+  function confirmArchiveChantier(ch) {
+    if (window.confirm("Archiver « " + (ch.nom || "ce chantier") + " » ? Il disparaîtra du tableau principal mais restera consultable dans les chantiers archivés (rubrique admin).")) {
+      api("/api/admin/chantiers/" + ch.id + "/archive", { method: "POST" }).then(refreshAll);
+    }
+  }
+
   function confirmDeleteChantier(ch) {
     if (window.confirm("Supprimer « " + (ch.nom || "ce chantier") + " » et toutes ses cases cochées ? Cette action est définitive.")) {
       api("/api/admin/chantiers/" + ch.id, { method: "DELETE" }).then(refreshAll);
@@ -506,6 +584,7 @@
         commentBox.hidden = true;
       }
       document.getElementById("cellResetBtn").hidden = !state.isAdmin;
+      renderAttachmentBox(cell);
     } else {
       title.textContent = isDateCol ? "Choisir la date de réception" : "Marquer terminé";
       formView.hidden = false;
@@ -531,6 +610,7 @@
 
       document.getElementById("cellCommentInput").value = "";
       document.getElementById("cellFormError").textContent = "";
+      renderAttachmentBox(null);
     }
 
     backdrop.hidden = false;
@@ -539,6 +619,69 @@
   function closeCellModal() {
     document.getElementById("cellBackdrop").hidden = true;
     state.activeCellCtx = null;
+  }
+
+  // ---------- pièce jointe sur une case ----------
+
+  function renderAttachmentBox(cell) {
+    var box = document.getElementById("cellAttachmentBox");
+    var current = document.getElementById("attachmentCurrent");
+    var link = document.getElementById("attachmentLink");
+    var removeBtn = document.getElementById("attachmentRemoveBtn");
+    var uploadRow = document.getElementById("attachmentUpload");
+    var err = document.getElementById("attachmentError");
+    err.textContent = "";
+    document.getElementById("attachmentFileInput").value = "";
+
+    if (!cell) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+
+    if (cell.attachmentFilename) {
+      current.hidden = false;
+      link.textContent = "📎 " + cell.attachmentFilename;
+      link.href = "/api/cells/" + cell.id + "/attachment";
+      removeBtn.hidden = !state.isAdmin;
+      removeBtn.onclick = function () {
+        if (!window.confirm("Supprimer la pièce jointe « " + cell.attachmentFilename + " » ?")) return;
+        api("/api/cells/" + cell.id + "/attachment", { method: "DELETE" })
+          .then(refreshAll)
+          .then(function () { refreshAttachmentBoxFromState(); });
+      };
+      uploadRow.hidden = true;
+    } else {
+      current.hidden = true;
+      uploadRow.hidden = false;
+    }
+  }
+
+  function refreshAttachmentBoxFromState() {
+    var ctx = state.activeCellCtx;
+    if (!ctx) return;
+    var cell = state.cellsByKey[cellKey(ctx.chantierId, ctx.colonneId)];
+    renderAttachmentBox(cell || null);
+  }
+
+  function uploadAttachment(cellId, file) {
+    var fd = new FormData();
+    fd.append("file", file);
+    return fetch("/api/cells/" + cellId + "/attachment", {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    }).then(function (res) {
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          var e = new Error(data.error || "upload_failed");
+          e.status = res.status;
+          e.data = data;
+          throw e;
+        });
+      }
+      return res.json().catch(function () { return null; });
+    });
   }
 
   function wireCellModal() {
@@ -589,6 +732,31 @@
         closeCellModal();
         return refreshAll();
       });
+    };
+
+    document.getElementById("attachmentUploadBtn").onclick = function () {
+      var ctx = state.activeCellCtx;
+      var fileInput = document.getElementById("attachmentFileInput");
+      var err = document.getElementById("attachmentError");
+      err.textContent = "";
+      if (!ctx || !ctx.cell) return;
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) {
+        err.textContent = "Choisissez un fichier.";
+        return;
+      }
+      uploadAttachment(ctx.cell.id, file)
+        .then(refreshAll)
+        .then(function () { refreshAttachmentBoxFromState(); })
+        .catch(function (e) {
+          if (e.status === 400 && e.data && e.data.error === "invalid_filetype") {
+            err.textContent = "Type de fichier non autorisé (PDF ou image uniquement).";
+          } else if (e.status === 400 && e.data && e.data.error === "file_too_large") {
+            err.textContent = "Fichier trop volumineux (5 Mo max).";
+          } else {
+            err.textContent = "Échec de l’envoi, réessayez.";
+          }
+        });
     };
   }
 
