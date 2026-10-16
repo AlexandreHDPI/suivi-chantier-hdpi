@@ -91,6 +91,14 @@ async function migrate() {
   await pool.query(`ALTER TABLE cell_status ADD COLUMN IF NOT EXISTS attachment_size INTEGER;`);
   await pool.query(`ALTER TABLE cell_status ADD COLUMN IF NOT EXISTS attachment_data BYTEA;`);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS colonne_exclusions (
+      chantier_id INTEGER NOT NULL REFERENCES chantiers(id) ON DELETE CASCADE,
+      colonne_id INTEGER NOT NULL REFERENCES colonnes(id) ON DELETE CASCADE,
+      PRIMARY KEY (chantier_id, colonne_id)
+    );
+  `);
+
   const { rows: colonneRows } = await pool.query("SELECT id FROM colonnes LIMIT 1");
   if (colonneRows.length === 0) {
     for (let i = 0; i < DEFAULT_COLONNES.length; i++) {
