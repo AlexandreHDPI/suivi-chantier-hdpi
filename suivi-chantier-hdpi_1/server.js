@@ -73,6 +73,12 @@ app.get("/api/board", async (req, res) => {
     const cells = await pool.query(
       "SELECT id, chantier_id, colonne_id, technicien_initiales, commentaire, completed_at, date_value, attachment_filename, attachment_mimetype, attachment_size FROM cell_status"
     );
+    const exclusions = await pool.query("SELECT chantier_id, colonne_id FROM colonne_exclusions");
+    const exclusionsByChantier = {};
+    exclusions.rows.forEach((row) => {
+      if (!exclusionsByChantier[row.chantier_id]) exclusionsByChantier[row.chantier_id] = [];
+      exclusionsByChantier[row.chantier_id].push(row.colonne_id);
+    });
 
     res.json({
       chantiers: chantiers.rows.map((c) => ({
@@ -80,6 +86,7 @@ app.get("/api/board", async (req, res) => {
         nom: c.nom,
         adresse: c.adresse,
         createdAt: c.created_at,
+        colonnesInactives: exclusionsByChantier[c.id] || [],
       })),
       colonnes: colonnes.rows.map((c) => ({ id: c.id, nom: c.nom, ordre: c.ordre, type: c.type })),
       cells: cells.rows.map((c) => ({
@@ -406,6 +413,35 @@ app.post("/api/admin/chantiers/:id/unarchive", requireAdmin, async (req, res) =>
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server_error" });
+  }
+});
+
+// ---------- admin: colonnes applicables à un chantier (optionnel, secondaire) ----------
+
+app.put("/api/admin/chantiers/:id/colonnes", requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: "invalid_input" });
+    const raw = Array.isArray(req.body.inactiveColonneIds) ? req.body.inactiveColonneIds : [];
+    const inactiveIds = raw.map((v) => parseInt(v, 10)).filter((v) => Number.isInteger(v));
+
+    await client.query("BEGIN");
+    await client.query("DELETE FROM colonne_exclusions WHERE chantier_id = $1", [id]);
+    for (const colonneId of inactiveIds) {
+      await client.query(
+        "INSERT INTO colonne_exclusions (chantier_id, colonne_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        [id, colonneId]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ ok: true, inactiveColonneIds: inactiveIds });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    res.status(500).json({ error: "server_error" });
+  } finally {
+    client.release();
   }
 });
 
