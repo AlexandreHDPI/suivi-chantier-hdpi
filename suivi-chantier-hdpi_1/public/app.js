@@ -424,6 +424,12 @@
         editBtn.onclick = function () { startEditChantier(tdChantier, ch); };
         actions.appendChild(editBtn);
 
+        var colonnesBtn = document.createElement("button");
+        colonnesBtn.type = "button";
+        colonnesBtn.textContent = "Colonnes";
+        colonnesBtn.onclick = function () { openChantierColonnesModal(ch); };
+        actions.appendChild(colonnesBtn);
+
         var archiveBtn = document.createElement("button");
         archiveBtn.type = "button";
         archiveBtn.className = "danger";
@@ -444,8 +450,14 @@
         btn.type = "button";
 
         var isDateCol = isDateColonne(col);
+        var isInactive = (ch.colonnesInactives || []).indexOf(col.id) !== -1;
 
-        if (cell) {
+        if (!cell && isInactive) {
+          btn.className = "cell-btn cell-na";
+          btn.disabled = true;
+          btn.textContent = "—";
+          btn.title = "Non applicable à ce chantier";
+        } else if (cell) {
           btn.className = "cell-btn done" + (cell.commentaire ? " has-comment" : "");
           if (isDateCol && cell.dateValue) {
             var uc = receptionUrgencyColors(cell.dateValue);
@@ -531,6 +543,58 @@
     row.appendChild(editActions);
     tdChantier.appendChild(row);
     nomInput.focus();
+  }
+
+  // ---------- colonnes applicables à un chantier (optionnel, secondaire) ----------
+
+  var chantierColonnesCtx = null;
+
+  function openChantierColonnesModal(ch) {
+    chantierColonnesCtx = ch;
+    var sub = document.getElementById("chantierColonnesSub");
+    sub.textContent = "Décoche les colonnes qui ne concernent pas « " + (ch.nom || "ce chantier") + " ». Elles apparaîtront grisées dans le tableau.";
+    var list = document.getElementById("chantierColonnesList");
+    list.innerHTML = "";
+    var inactives = ch.colonnesInactives || [];
+    var sorted = state.colonnes.slice().sort(function (a, b) { return a.ordre - b.ordre; });
+    sorted.forEach(function (col) {
+      var row = document.createElement("label");
+      row.className = "checkbox-row";
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = col.id;
+      box.checked = inactives.indexOf(col.id) === -1;
+      row.appendChild(box);
+      var span = document.createElement("span");
+      span.textContent = col.nom;
+      row.appendChild(span);
+      list.appendChild(row);
+    });
+    document.getElementById("chantierColonnesBackdrop").hidden = false;
+  }
+
+  function closeChantierColonnesModal() {
+    document.getElementById("chantierColonnesBackdrop").hidden = true;
+    chantierColonnesCtx = null;
+  }
+
+  function wireChantierColonnesModal() {
+    document.getElementById("chantierColonnesCancel").onclick = closeChantierColonnesModal;
+    document.getElementById("chantierColonnesSave").onclick = function () {
+      if (!chantierColonnesCtx) return;
+      var boxes = document.querySelectorAll("#chantierColonnesList input[type=checkbox]");
+      var inactiveIds = [];
+      boxes.forEach(function (box) {
+        if (!box.checked) inactiveIds.push(parseInt(box.value, 10));
+      });
+      api("/api/admin/chantiers/" + chantierColonnesCtx.id + "/colonnes", {
+        method: "PUT",
+        body: { inactiveColonneIds: inactiveIds },
+      }).then(function () {
+        closeChantierColonnesModal();
+        return refreshAll();
+      });
+    };
   }
 
   function confirmArchiveChantier(ch) {
@@ -1020,6 +1084,7 @@
     wireWidthControls();
     wireZoomControl();
     wireTutoModal();
+    wireChantierColonnesModal();
     refreshAll();
     if (!safeGetLS(LS_TUTO_SEEN)) {
       openTutoModal();
