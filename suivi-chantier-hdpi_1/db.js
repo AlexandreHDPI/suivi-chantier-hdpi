@@ -84,6 +84,13 @@ async function migrate() {
 
   await pool.query(`ALTER TABLE cell_status ADD COLUMN IF NOT EXISTS date_value TEXT;`);
 
+  await pool.query(`ALTER TABLE chantiers ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT false;`);
+
+  await pool.query(`ALTER TABLE cell_status ADD COLUMN IF NOT EXISTS attachment_filename TEXT;`);
+  await pool.query(`ALTER TABLE cell_status ADD COLUMN IF NOT EXISTS attachment_mimetype TEXT;`);
+  await pool.query(`ALTER TABLE cell_status ADD COLUMN IF NOT EXISTS attachment_size INTEGER;`);
+  await pool.query(`ALTER TABLE cell_status ADD COLUMN IF NOT EXISTS attachment_data BYTEA;`);
+
   const { rows: colonneRows } = await pool.query("SELECT id FROM colonnes LIMIT 1");
   if (colonneRows.length === 0) {
     for (let i = 0; i < DEFAULT_COLONNES.length; i++) {
