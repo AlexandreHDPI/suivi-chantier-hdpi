@@ -262,6 +262,20 @@ button{ font-family:inherit; cursor:pointer; }
 .archived-row .nom{ flex:1; font-size:13.5px; font-weight:600; min-width:0; }
 .archived-row .actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
 
+.colonnes-check-list{
+  display:flex; flex-direction:column; gap:2px;
+  max-height:260px; overflow-y:auto;
+  margin-top:4px;
+}
+.colonnes-check-list .checkbox-row{
+  margin-top:0;
+  padding:6px 4px;
+  border-radius:var(--radius-s);
+  color:var(--ink);
+  font-size:13.5px;
+}
+.colonnes-check-list .checkbox-row:hover{ background:var(--paper); }
+
 .attachment-box{ margin-top:10px; border-top:1px solid var(--line); padding-top:10px; }
 .attachment-current{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }
 .attachment-current a{
@@ -361,6 +375,14 @@ td.data-cell{ width:104px; min-width:104px; text-align:center; padding:6px; }
 }
 .cell-btn:hover{ border-color:var(--accent-2); color:var(--accent-2); box-shadow:var(--shadow-sm); transform:translateY(-1px); }
 .cell-btn:disabled{ opacity:.4; transform:none; box-shadow:none; }
+.cell-btn.cell-na{
+  border:1.5px dashed var(--line);
+  background:var(--paper);
+  color:var(--line-strong);
+  opacity:.6;
+  cursor:default;
+}
+.cell-btn.cell-na:hover{ border-color:var(--line); color:var(--line-strong); box-shadow:none; transform:none; }
 .cell-btn.done{
   border:none;
   background:var(--done-bg);
