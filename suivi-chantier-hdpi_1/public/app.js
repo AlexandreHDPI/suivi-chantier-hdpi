@@ -407,13 +407,6 @@
       nomEl.textContent = ch.nom || "(sans nom)";
       tdChantier.appendChild(nomEl);
 
-      var progress = chantierProgress(ch.id, colonnes);
-      var progressEl = document.createElement("span");
-      progressEl.className = "progress-badge" + (progress.total > 0 && progress.done === progress.total ? " complete" : "");
-      progressEl.textContent = progress.done + "/" + progress.total;
-      progressEl.title = progress.done + " sur " + progress.total + " élément(s) complété(s)";
-      tdChantier.appendChild(progressEl);
-
       if (ch.adresse) {
         var adrEl = document.createElement("div");
         adrEl.className = "chantier-cell-adr";
