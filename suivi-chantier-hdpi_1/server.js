@@ -3,16 +3,40 @@ const cookieParser = require("cookie-parser");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const path = require("path");
+const multer = require("multer");
 const { pool, migrate } = require("./db");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const COOKIE_NAME = "hdpi_session";
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5 Mo
 
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
+
+// ---------- attachments (PDF / images) ----------
+
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_ATTACHMENT_BYTES },
+  fileFilter: (req, file, cb) => {
+    const ok = file.mimetype === "application/pdf" || file.mimetype.startsWith("image/");
+    if (!ok) return cb(new Error("invalid_filetype"));
+    cb(null, true);
+  },
+});
+
+function handleAttachmentUpload(req, res, next) {
+  attachmentUpload.single("file")(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === "LIMIT_FILE_SIZE") return res.status(400).json({ error: "file_too_large" });
+    if (err.message === "invalid_filetype") return res.status(400).json({ error: "invalid_filetype" });
+    console.error(err);
+    return res.status(500).json({ error: "server_error" });
+  });
+}
 
 // ---------- helpers ----------
 
@@ -41,13 +65,13 @@ function cleanInitiales(v) {
 app.get("/api/board", async (req, res) => {
   try {
     const chantiers = await pool.query(
-      "SELECT id, nom, adresse, created_at FROM chantiers ORDER BY created_at ASC"
+      "SELECT id, nom, adresse, created_at FROM chantiers WHERE archived = false ORDER BY created_at ASC"
     );
     const colonnes = await pool.query(
       "SELECT id, nom, ordre, type FROM colonnes ORDER BY ordre ASC, id ASC"
     );
     const cells = await pool.query(
-      "SELECT id, chantier_id, colonne_id, technicien_initiales, commentaire, completed_at, date_value FROM cell_status"
+      "SELECT id, chantier_id, colonne_id, technicien_initiales, commentaire, completed_at, date_value, attachment_filename, attachment_mimetype, attachment_size FROM cell_status"
     );
 
     res.json({
@@ -66,6 +90,9 @@ app.get("/api/board", async (req, res) => {
         commentaire: c.commentaire,
         date: c.completed_at,
         dateValue: c.date_value,
+        attachmentFilename: c.attachment_filename,
+        attachmentMimetype: c.attachment_mimetype,
+        attachmentSize: c.attachment_size,
       })),
     });
   } catch (e) {
@@ -173,6 +200,73 @@ app.post("/api/cells", async (req, res) => {
   }
 });
 
+// ---------- pièce jointe sur une case ----------
+
+app.post("/api/cells/:id/attachment", handleAttachmentUpload, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: "invalid_input" });
+    if (!req.file) return res.status(400).json({ error: "no_file" });
+
+    const cell = await pool.query("SELECT id FROM cell_status WHERE id = $1", [id]);
+    if (cell.rows.length === 0) return res.status(404).json({ error: "not_found" });
+
+    const filename = String(req.file.originalname || "fichier").slice(0, 200);
+    await pool.query(
+      `UPDATE cell_status
+       SET attachment_filename = $1, attachment_mimetype = $2, attachment_size = $3, attachment_data = $4
+       WHERE id = $5`,
+      [filename, req.file.mimetype, req.file.size, req.file.buffer, id]
+    );
+    res.json({
+      ok: true,
+      attachmentFilename: filename,
+      attachmentMimetype: req.file.mimetype,
+      attachmentSize: req.file.size,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+app.get("/api/cells/:id/attachment", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { rows } = await pool.query(
+      "SELECT attachment_filename, attachment_mimetype, attachment_data FROM cell_status WHERE id = $1",
+      [id]
+    );
+    if (rows.length === 0 || !rows[0].attachment_data) return res.status(404).send("Introuvable");
+    const row = rows[0];
+    res.setHeader("Content-Type", row.attachment_mimetype || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${encodeURIComponent(row.attachment_filename || "fichier")}"`
+    );
+    res.send(row.attachment_data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("Erreur serveur");
+  }
+});
+
+app.delete("/api/cells/:id/attachment", requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    await pool.query(
+      `UPDATE cell_status
+       SET attachment_filename = NULL, attachment_mimetype = NULL, attachment_size = NULL, attachment_data = NULL
+       WHERE id = $1`,
+      [id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
 // ---------- admin auth ----------
 
 app.post("/api/admin/login", async (req, res) => {
@@ -272,6 +366,42 @@ app.delete("/api/admin/chantiers/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     await pool.query("DELETE FROM chantiers WHERE id = $1", [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+app.get("/api/admin/chantiers/archived", requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, nom, adresse, created_at FROM chantiers WHERE archived = true ORDER BY created_at DESC"
+    );
+    res.json(
+      rows.map((c) => ({ id: c.id, nom: c.nom, adresse: c.adresse, createdAt: c.created_at }))
+    );
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+app.post("/api/admin/chantiers/:id/archive", requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    await pool.query("UPDATE chantiers SET archived = true WHERE id = $1", [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server_error" });
+  }
+});
+
+app.post("/api/admin/chantiers/:id/unarchive", requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    await pool.query("UPDATE chantiers SET archived = false WHERE id = $1", [id]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
